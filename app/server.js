@@ -84,8 +84,25 @@ const clientEncryption = new ClientEncryption(client, {
 });
 
 // Connect mongoose to the same database
-mongoose.connect(uri + "/csfle?retryWrites=true&w=majority&appName=Cluster0");
+mongoose.connect(uri + "/csfle?authSource=admin");
 console.log("✅ Mongoose connected");
+
+// Create indexes for better query performance
+async function createIndexes() {
+  try {
+    const sensorsCollection = client.db("csfle").collection("sensors");
+
+    // Create compound indexes for common queries
+    await sensorsCollection.createIndex({ "timestamp": -1 });
+    await sensorsCollection.createIndex({ "deviceName": 1, "timestamp": -1 });
+    await sensorsCollection.createIndex({ "MuxId": 1, "PipeNo": 1, "timestamp": -1 });
+
+    console.log("✅ Database indexes created for optimal performance");
+  } catch (error) {
+    console.log("⚠️ Index creation warning:", error.message);
+  }
+}
+createIndexes();
 
 const app = express();
 app.use(express.json());
@@ -227,7 +244,104 @@ app.get("/api/sensor-data", async (req, res) => {
   console.timeEnd(timerId);
 });
 
+// Super fast count-only endpoint
+app.get("/api/sensor-data/count", async (req, res) => {
+  console.time("GET /api/sensor-data/count");
+
+  try {
+    const sensorsCollection = client.db("csfle").collection("sensors");
+    const totalCount = await sensorsCollection.countDocuments();
+
+    res.json({
+      totalCount,
+      method: "count only (ultra-fast)",
+      note: "Use this to get total record count instantly"
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+
+  console.timeEnd("GET /api/sensor-data/count");
+});
+
+// Get latest N records (fastest for recent data)
+app.get("/api/sensor-data/latest", async (req, res) => {
+  console.time("GET /api/sensor-data/latest");
+
+  try {
+    const { limit = 10, decrypt = 'false' } = req.query;
+
+    if (decrypt === 'true') {
+      // Latest records with decryption
+      const sensorsCollection = autoEncryptClient.db("csfle").collection("sensors");
+      const sensors = await sensorsCollection
+        .find({})
+        .sort({ timestamp: -1 })
+        .limit(parseInt(limit))
+        .toArray();
+
+      res.json({
+        count: sensors.length,
+        data: sensors,
+        method: "latest records (decrypted)",
+        note: "Latest records with automatic decryption"
+      });
+    } else {
+      // Latest records metadata only (super fast)
+      const sensorsCollection = client.db("csfle").collection("sensors");
+      const sensors = await sensorsCollection
+        .find({}, {
+          projection: {
+            deviceName: 1,
+            MuxId: 1,
+            PipeNo: 1,
+            timestamp: 1,
+            _id: 1
+          }
+        })
+        .sort({ timestamp: -1 })
+        .limit(parseInt(limit))
+        .toArray();
+
+      res.json({
+        count: sensors.length,
+        data: sensors,
+        method: "latest records (metadata only)",
+        note: "Ultra-fast latest records. Add ?decrypt=true for sensor values."
+      });
+    }
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+
+  console.timeEnd("GET /api/sensor-data/latest");
+});
+
 // Decrypt individual record by ID (on-demand decryption)
+app.get("/api/sensor-data/decrypt/:id", async (req, res) => {
+  console.time("GET /api/sensor-data/decrypt/:id");
+
+  try {
+    const { id } = req.params;
+    const sensorsCollection = autoEncryptClient.db("csfle").collection("sensors");
+
+    const sensor = await sensorsCollection.findOne({ _id: new mongoose.Types.ObjectId(id) });
+
+    if (!sensor) {
+      return res.status(404).json({ error: "Sensor record not found" });
+    }
+
+    res.json({
+      data: sensor,
+      method: "individual record decryption",
+      note: "Single record with full decryption"
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+
+  console.timeEnd("GET /api/sensor-data/decrypt/:id");
+});
 app.get("/api/sensor-data/decrypt/:id", async (req, res) => {
   const timerId = `GET /api/sensor-data/decrypt/${req.params.id}`;
   console.time(timerId);
