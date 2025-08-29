@@ -1,0 +1,13 @@
+POST http://localhost:5001/api/sensor-data
+Content-Type: application/json
+
+{
+    "sensorName": "humidity",
+    "sensorValue": "25%"
+}
+
+###
+GET http://localhost:5001/api/sensor-data
+
+###
+GET http://localhost:5001/api/efficient-sensor-data
