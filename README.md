@@ -2,7 +2,7 @@
 
 ## 🔐 Overview
 
-This project demonstrates **MongoDB Client-Side Field Level Encryption (CSFLE)** implementation with high-performance sensor data management. It showcases both manual and automatic encryption/decryption approaches optimized for large-scale IoT sensor data processing.
+This project demonstrates **MongoDB Client-Side Field Level Encryption (CSFLE)** implementation with high-performance sensor data management. It showcases both manual and automatic encryption/decryption approaches optimized for large-scale data processing.
 
 ## 🚀 Key Features
 
